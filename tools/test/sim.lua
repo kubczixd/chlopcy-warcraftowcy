@@ -83,6 +83,18 @@ function GetAchievementInfo(cat, i)
   return 7, "Level 20", 10, false
 end
 function GetTotalAchievementPoints() return 10 end
+-- poczta: sprzedana aukcja, wygrana aukcja, przebita oferta (zwrot - nie liczymy)
+AUCTION_SOLD_MAIL_SUBJECT, AUCTION_WON_MAIL_SUBJECT = "Auction successful: %s", "Auction won: %s"
+local MAIL = {
+  { subject = "Auction successful: Linen Cloth (20)", money = 9500, items = 0, inv = { "seller", "Linen Cloth", "Thrall", 10000 } },
+  { subject = "Auction won: Copper Ore", money = 0, items = 1, inv = { "buyer", "Copper Ore", "Jaina", 800 } },
+  { subject = "Outbid on Silk Cloth", money = 1200, items = 0 },
+}
+function GetInboxNumItems() return #MAIL end
+function GetInboxHeaderInfo(i) local m = MAIL[i]; return nil, nil, "Auction House", m.subject, m.money, 0, 30, m.items end
+function GetInboxInvoiceInfo(i) local m = MAIL[i]; if m.inv then return unpack(m.inv) end end
+function TakeInboxMoney(i) end
+function TakeInboxItem(i) end
 unpack = unpack or table.unpack
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
 
@@ -124,6 +136,11 @@ advance(700)
 S.taxi = true; fire("PLAYER_CONTROL_LOST"); advance(2)
 SlashCmdList.EKIPA("")
 SlashCmdList.EKIPA("sonda")
+-- dom aukcyjny: pieniadze ze sprzedazy, przedmiot z wygranej, zwrot za przebicie (dwa klikniecia w ten sam list)
+fire("MAIL_SHOW")
+TakeInboxMoney(1); TakeInboxMoney(1); TakeInboxItem(2, 1); TakeInboxMoney(3)
+-- wylogowanie: gra zwraca exp 0/0, addon ma wyslac ostatni znany stan
+S.xp, S.xpmax = 0, 0
 -- reload
 ReloadUI(); fire("PLAYER_LOGOUT")
 

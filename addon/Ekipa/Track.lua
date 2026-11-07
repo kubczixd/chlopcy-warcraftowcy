@@ -6,6 +6,7 @@
 --   LOOT    przedmiot niebieski lub lepszy (liczniki wszystkich jakosci w STAN)
 --   PVP_ZAB / PVP_SMIERC  zabity gracz / smierc od gracza (poza BG i arenami)
 --   STREFA  zmiana strefy, BOSS koniec walki z bossem (wynik)
+--   AUKCJA  sprzedany przedmiot (pieniadze z poczty) albo wygrana aukcja
 --   LOGIN / LOGOUT / STAN (Core.lua)
 -- Liczniki (exp wg zrodla, zloto zarobione/wydane, moby, smierci...) sa w EkipaDB i w zdarzeniu STAN.
 
@@ -19,7 +20,10 @@ local last = {}
 local lastQuest = { gt = -100, xp = 0 }
 local lastMobXp -- { mob, xp, gt }
 
-local function snapXP() last.lvl, last.xp, last.max = UnitLevel("player"), UnitXP("player"), UnitXPMax("player") end
+local function snapXP()
+  last.lvl, last.xp, last.max = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
+  if last.max and last.max > 0 then ns.state.xp, ns.state.xpMax = last.xp, last.max end
+end
 
 ns.On("PLAYER_XP_UPDATE", function(unit)
   if unit and unit ~= "player" then return end
@@ -34,6 +38,7 @@ ns.On("PLAYER_XP_UPDATE", function(unit)
   end
   last.lvl, last.xp = lvl, xp
   if max then last.max = max end
+  if max and max > 0 then ns.state.xp, ns.state.xpMax = xp, max end
   if gain <= 0 then return end
   Add("exp", gain)
   local gt = GetTime()
@@ -430,3 +435,56 @@ ns.On("UPDATE_EXHAUSTION", function() ns.state.rested = GetXPExhaustion() or 0 e
 ns.Hook("logout", function()
   for _, k in ipairs({ unpack(pending) }) do flush(k) end -- zabojstwa czekajace na komunikat o expie
 end)
+
+-------------------------------------------------------------------------------
+-- Dom aukcyjny: pieniadze ze sprzedanych aukcji (poczta) i wygrane aukcje
+-------------------------------------------------------------------------------
+-- Temat listu z formatu gry (np. "Auction successful: %s") -> wzorzec Lua; dziala w kazdym jezyku gry.
+local function subjectPattern(fmt)
+  if type(fmt) ~= "string" or fmt == "" then return nil end
+  local p = fmt:gsub("([%(%)%.%+%-%*%?%[%]%^%$])", "%%%1"):gsub("%%s", "(.+)"):gsub("%%d", "%%d+")
+  return "^" .. p .. "$"
+end
+local SOLD, WON = subjectPattern(AUCTION_SOLD_MAIL_SUBJECT), subjectPattern(AUCTION_WON_MAIL_SUBJECT)
+
+-- stan listow sprzed klikniecia (dane zmieniaja sie dopiero po odpowiedzi serwera)
+local mails = {}
+local function scanMail()
+  wipe(mails)
+  local n = GetInboxNumItems and GetInboxNumItems() or 0
+  for i = 1, n do
+    local _, _, _, subject, money, _, _, items = GetInboxHeaderInfo(i)
+    local inv, item, who, bid
+    if GetInboxInvoiceInfo then inv, item, who, bid = GetInboxInvoiceInfo(i) end
+    local kind
+    if inv == "seller" or (SOLD and type(subject) == "string" and subject:match(SOLD)) then kind = "sprzedaz"
+    elseif inv == "buyer" or (WON and type(subject) == "string" and subject:match(WON)) then kind = "zakup" end
+    if kind then
+      local name = item
+      if not name and type(subject) == "string" then name = subject:match(kind == "sprzedaz" and SOLD or WON) end
+      mails[i] = { kind = kind, money = money or 0, items = items or 0, name = ns.Safe(name), who = ns.Safe(who), bid = ns.Safe(bid) }
+    end
+  end
+end
+ns.On("MAIL_INBOX_UPDATE", scanMail)
+ns.On("MAIL_SHOW", scanMail)
+
+local function takeMoney(i)
+  local m = mails[i]
+  if not m or m.kind ~= "sprzedaz" or m.money <= 0 then return end
+  Add("aukcje_zysk", m.money)
+  Add("aukcje_sprzedane", 1)
+  Log("AUKCJA", { typ = "sprzedaz", nazwa = m.name, kwota = m.money, cena = m.bid, kupiec = m.who })
+  m.money = 0
+end
+local function takeItem(i)
+  local m = mails[i]
+  if not m or m.kind ~= "zakup" or m.items <= 0 or m.counted then return end
+  m.counted = true
+  Add("aukcje_kupione", 1)
+  if m.bid and m.bid > 0 then Add("aukcje_wydane", m.bid) end
+  Log("AUKCJA", { typ = "zakup", nazwa = m.name, kwota = m.bid, sprzedawca = m.who })
+end
+if TakeInboxMoney then hooksecurefunc("TakeInboxMoney", function(i) pcall(takeMoney, i) end) end
+if TakeInboxItem then hooksecurefunc("TakeInboxItem", function(i) pcall(takeItem, i) end) end
+if AutoLootMailItem then hooksecurefunc("AutoLootMailItem", function(i) pcall(takeMoney, i); pcall(takeItem, i) end) end

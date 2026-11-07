@@ -115,7 +115,8 @@ end
 
 local STAT_KEYS = { "moby", "moby_moje", "smierci", "questy", "exp", "exp_moby", "exp_questy", "exp_inne",
   "zloto_plus", "zloto_minus", "zloto_loot", "zloto_questy", "pvp_zab", "pvp_smierci", "bossy", "awanse",
-  "loot0", "loot1", "loot2", "loot3", "loot4", "loot5", "naprawy", "afk_sek" }
+  "loot0", "loot1", "loot2", "loot3", "loot4", "loot5", "naprawy", "afk_sek",
+  "aukcje_zysk", "aukcje_sprzedane", "aukcje_wydane", "aukcje_kupione" }
 
 local function zeroStats()
   local t = {}
@@ -236,13 +237,16 @@ local function snapshot(powod)
   end
   local played, playedLvl = ns.Played()
   local zone, inst = ns.Zone()
+  -- przy wylogowaniu gra zwraca exp 0/0 - wtedy ostatni znany stan
+  local xp, xpMax = UnitXP("player"), UnitXPMax("player")
+  if (not xpMax or xpMax == 0) and ns.state.xpMax then xp, xpMax = ns.state.xp, ns.state.xpMax end
   return {
     powod = powod,
     imie = name, realm = ns.Safe(GetRealmName()), pvp_name = ns.Safe(UnitPVPName and UnitPVPName("player")),
     klasa = ns.Safe(cls), rasa = race, frakcja = ns.Safe(UnitFactionGroup("player")),
     plec = ns.Safe(UnitSex("player")), region = region, bnet = bnet, hardcore = hc,
     gildia = ns.Safe(guild), gildia_ranga = ns.Safe(guildRank),
-    lvl = ns.state.lvl or UnitLevel("player"), xp = UnitXP("player"), xp_max = UnitXPMax("player"),
+    lvl = ns.state.lvl or UnitLevel("player"), xp = xp, xp_max = xpMax,
     rested = GetXPExhaustion() or ns.state.rested or 0, zloto = money,
     played = played, played_lvl = playedLvl, hk = hk, ilvl = ilvl and math.floor(ilvl + 0.5) or nil, punkty = points, strefa = zone, instancja = inst,
     gra = ns.GRA, wersja = ns.VERSION,
