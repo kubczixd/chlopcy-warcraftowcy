@@ -5,7 +5,15 @@
 
 function Install-Ekipa {
   $ErrorActionPreference = 'Stop'
-  try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+  # TLS: strona (Cloudflare) przyjmuje tylko TLS 1.3. Gdy .NET zostawia wybor systemowi (0 = SystemDefault), nic nie
+  # ruszamy; inaczej (stary domyslny Ssl3/Tls) dokladamy 1.2 i 1.3 (12288 - stary .NET nie zna nazwy Tls13).
+  # Samo wymuszenie Tls12 odcinalo TLS 1.3 i kazde polaczenie konczylo sie bledem 'bezpiecznego kanalu SSL/TLS'.
+  try {
+    $sp = [Net.ServicePointManager]::SecurityProtocol
+    if ([int]$sp -ne 0) {
+      [Net.ServicePointManager]::SecurityProtocol = $sp -bor [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]12288
+    }
+  } catch {}
   $url = if ($EkipaUrl) { $EkipaUrl } else { 'https://challenge.kubczi.pl' }
   $token = $EkipaToken
 

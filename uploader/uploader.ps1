@@ -9,7 +9,7 @@
 # Dziennik: %LOCALAPPDATA%\EkipaWoW\uploader.log
 # Plik tylko ASCII (Windows PowerShell 5.1 czyta skrypty bez BOM jako ANSI).
 
-$UploaderVersion = '1.0.0'
+$UploaderVersion = '1.0.1'
 $ErrorActionPreference = 'Stop'
 $Dir = Join-Path $env:LOCALAPPDATA 'EkipaWoW'
 $ConfigPath = Join-Path $Dir 'config.json'
@@ -30,7 +30,15 @@ $created = $false
 $mutex = New-Object System.Threading.Mutex($true, 'Local\EkipaWoWUploader', [ref]$created)
 if (-not $created) { exit 0 }
 
-try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+# TLS: strona (Cloudflare) przyjmuje tylko TLS 1.3. Gdy .NET zostawia wybor systemowi (0 = SystemDefault), nic nie
+# ruszamy; inaczej (stary domyslny Ssl3/Tls) dokladamy 1.2 i 1.3 (12288 - stary .NET nie zna nazwy Tls13).
+# Samo wymuszenie Tls12 odcinalo TLS 1.3 i kazde polaczenie konczylo sie bledem 'bezpiecznego kanalu SSL/TLS'.
+try {
+  $sp = [Net.ServicePointManager]::SecurityProtocol
+  if ([int]$sp -ne 0) {
+    [Net.ServicePointManager]::SecurityProtocol = $sp -bor [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]12288
+  }
+} catch {}
 
 if (-not (Test-Path $ConfigPath)) { Write-Log 'Brak config.json - uruchom instalacje jeszcze raz.'; exit 1 }
 $cfg = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
