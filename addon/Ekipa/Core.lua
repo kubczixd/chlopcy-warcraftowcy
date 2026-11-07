@@ -115,7 +115,7 @@ end
 
 local STAT_KEYS = { "moby", "moby_moje", "smierci", "questy", "exp", "exp_moby", "exp_questy", "exp_inne",
   "zloto_plus", "zloto_minus", "zloto_loot", "zloto_questy", "pvp_zab", "pvp_smierci", "bossy", "awanse",
-  "loot0", "loot1", "loot2", "loot3", "loot4", "loot5", "naprawy" }
+  "loot0", "loot1", "loot2", "loot3", "loot4", "loot5", "naprawy", "afk_sek" }
 
 local function zeroStats()
   local t = {}
@@ -238,6 +238,8 @@ local function snapshot(powod)
     played = played, played_lvl = playedLvl, hk = hk, strefa = zone, instancja = inst,
     gra = ns.GRA, wersja = ns.VERSION,
     staty = CH.staty, sesja = CH.sesja and CH.sesja.staty or nil,
+    sesja_sek = CH.sesja and (ns.now() - CH.sesja.s) or nil,
+    wszech = ns.LifetimeStats and ns.LifetimeStats() or nil,
   }
 end
 ns.Snapshot = snapshot
@@ -293,6 +295,7 @@ if C_UI and C_UI.Reload then pcall(hooksecurefunc, C_UI, "Reload", function() ns
 ns.On("PLAYER_LOGOUT", function()
   if not CH or not CH.sesja then return end
   ns.Fire("logout")
+  if ns.state.afkSince then ns.Add("afk_sek", ns.now() - ns.state.afkSince); ns.state.afkSince = ns.now() end
   local reload = ns.state.reloading
   if not reload then
     local zone, inst = ns.Zone()
@@ -389,10 +392,16 @@ SlashCmdList.EKIPA = function(arg)
   elseif arg == "cicho" then
     DB.meta.bez_przypomnien = not DB.meta.bez_przypomnien
     ns.msg("Przypomnienia o /reload: " .. (DB.meta.bez_przypomnien and "wylaczone" or "wlaczone"))
+  elseif arg == "sonda" then
+    ns.Probe()
+  elseif arg == "historia" then
+    ns.SendHistory("komenda")
   elseif arg == "pomoc" or arg == "help" then
     ns.msg("/ekipa - stan zbierania danych")
     ns.msg("/ekipa zapisz - zapis danych (/reload)")
     ns.msg("/ekipa cicho - wylacz / wlacz przypomnienia o /reload")
+    ns.msg("/ekipa sonda - co gra udostepnia addonom (do sprawdzenia, nic nie zapisuje)")
+    ns.msg("/ekipa historia - wyslij jeszcze raz dane wstecz (questy, statystyki, osiagniecia)")
     ns.msg("/ekipa debug - pokazuj na czacie kazde zapisane zdarzenie")
   else
     status()

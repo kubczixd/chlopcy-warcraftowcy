@@ -68,12 +68,27 @@ LOOT_ITEM_SELF = "You receive loot: %s."
 GOLD_AMOUNT, SILVER_AMOUNT, COPPER_AMOUNT = "%d Gold", "%d Silver", "%d Copper"
 C_DeathRecap = { GetRecapEvents = function() return { { sourceName = "Hogger", spellName = "Bash", amount = 42, sourceGUID = "Creature-0-1-0-1-448-0000AA" } } end }
 SlashCmdList = {}
+S.afk = false
+function UnitIsAFK() return S.afk end
+function GetPVPLifetimeStats() return 12 end
+C_QuestLog = { GetAllCompletedQuestIDs = function() return { 1, 2, 3, 7, 9 } end }
+local STATS = { [60] = "7", [1197] = "1,234", [98] = "88", [328] = "12|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t 34|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t 5|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" }
+function GetStatistic(id) return STATS[id] or "--" end
+function GetStatisticsCategoryList() return { 130 } end
+function GetCategoryList() return { 92 } end
+function GetCategoryNumAchievements(cat) return cat == 130 and 4 or 2 end
+function GetAchievementInfo(cat, i)
+  if cat == 130 then local ids = { 60, 1197, 98, 328 }; return ids[i], "Stat " .. ids[i] end
+  if i == 1 then return 6, "Level 10", 10, true, 11, 5, 26 end
+  return 7, "Level 20", 10, false
+end
+function GetTotalAchievementPoints() return 10 end
 unpack = unpack or table.unpack
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
 
 -- wczytanie addonu -----------------------------------------------------------
 local ns = {}
-for _, f in ipairs({ "Json.lua", "Core.lua", "Track.lua" }) do
+for _, f in ipairs({ "Json.lua", "Core.lua", "Track.lua", "History.lua" }) do
   local chunk = assert(loadfile(dir .. "/" .. f))
   chunk("Ekipa", ns)
 end
@@ -81,7 +96,8 @@ end
 -- scenariusz -------------------------------------------------------------------
 fire("ADDON_LOADED", "Ekipa")
 fire("PLAYER_ENTERING_WORLD", true, false)
-advance(1)
+advance(16) -- dane wstecz (15 s po wejsciu)
+S.afk = true; fire("PLAYER_FLAGS_CHANGED", "player"); advance(120); S.afk = false; fire("PLAYER_FLAGS_CHANGED", "player")
 -- zabojstwo z PARTY_KILL + exp z czatu
 fire("PLAYER_TARGET_CHANGED") -- (atrapa: cel bez GUID)
 fire("PARTY_KILL", "Player-1234-0ABCDEF", "Creature-0-1-0-1-299-0000BB")
@@ -107,6 +123,7 @@ advance(2)
 advance(700)
 S.taxi = true; fire("PLAYER_CONTROL_LOST"); advance(2)
 SlashCmdList.EKIPA("")
+SlashCmdList.EKIPA("sonda")
 -- reload
 ReloadUI(); fire("PLAYER_LOGOUT")
 

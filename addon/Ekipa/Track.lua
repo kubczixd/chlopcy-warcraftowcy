@@ -414,6 +414,18 @@ ns.Hook("start", function()
   dur = durability()
   ns.state.rested = GetXPExhaustion() or 0
 end)
+-- AFK: czas liczony do licznika sesji (strona pokazuje czas sesji i ile z tego AFK)
+ns.On("PLAYER_FLAGS_CHANGED", function(unit)
+  if unit and unit ~= "player" then return end
+  local afk = UnitIsAFK("player")
+  if afk and not ns.state.afkSince then
+    ns.state.afkSince = now()
+  elseif not afk and ns.state.afkSince then
+    Add("afk_sek", now() - ns.state.afkSince)
+    ns.state.afkSince = nil
+  end
+end)
+
 ns.On("UPDATE_EXHAUSTION", function() ns.state.rested = GetXPExhaustion() or 0 end)
 ns.Hook("logout", function()
   for _, k in ipairs({ unpack(pending) }) do flush(k) end -- zabojstwa czekajace na komunikat o expie

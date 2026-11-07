@@ -74,10 +74,17 @@ Najlepszy moment: lot taksówką (gryfem / wywerną), statek, zeppelin. Addon sa
 | `/ekipa` | pokazuje, ile danych czeka na zapis i co zebrałeś w tej sesji |
 | `/ekipa zapisz` | to samo co `/reload` – zapisuje dane |
 | `/ekipa cicho` | wyłącza / włącza przypomnienia o `/reload` |
+| `/ekipa sonda` | pokazuje, jakie dane gra udostępnia (zrób zrzut ekranu i wyślij Kubie) |
+| `/ekipa historia` | jeszcze raz odczytuje dane wstecz (questy, statystyki, osiągnięcia) |
 
 ---
 
 ## ❓ Pytania
+
+**Już trochę gram – co z tym, co było wcześniej?** Przy pierwszym uruchomieniu addon sam odczytuje to, co gra
+pamięta: poziom, czas gry, złoto, liczbę ukończonych questów, statystyki postaci (śmierci, zabite moby, złoto –
+jeśli gra je ma) i daty osiągnięć „Level 10/20/…” (z nich strona odtworzy, kiedy wbiłeś te poziomy).
+Listy śmierci, lootu czy sesji sprzed instalacji gra nie zapisuje – te liczą się od instalacji.
 
 **Czy muszę coś włączać przed grą?** Nie. Uploader startuje sam z Windowsem i działa w tle bez okna.
 
