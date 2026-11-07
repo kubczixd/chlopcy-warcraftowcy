@@ -225,6 +225,15 @@ local function snapshot(powod)
   end
   local money = GetMoney()
   if (not money or money == 0) and ns.state.money then money = ns.state.money end
+  local ilvl, points
+  if GetAverageItemLevel then
+    local ok, overall, equipped = pcall(GetAverageItemLevel)
+    if ok then ilvl = ns.Safe(equipped) or ns.Safe(overall) end
+  end
+  if GetTotalAchievementPoints then
+    local ok, p = pcall(GetTotalAchievementPoints)
+    if ok then points = ns.Safe(p) end
+  end
   local played, playedLvl = ns.Played()
   local zone, inst = ns.Zone()
   return {
@@ -235,7 +244,7 @@ local function snapshot(powod)
     gildia = ns.Safe(guild), gildia_ranga = ns.Safe(guildRank),
     lvl = ns.state.lvl or UnitLevel("player"), xp = UnitXP("player"), xp_max = UnitXPMax("player"),
     rested = GetXPExhaustion() or ns.state.rested or 0, zloto = money,
-    played = played, played_lvl = playedLvl, hk = hk, strefa = zone, instancja = inst,
+    played = played, played_lvl = playedLvl, hk = hk, ilvl = ilvl and math.floor(ilvl + 0.5) or nil, punkty = points, strefa = zone, instancja = inst,
     gra = ns.GRA, wersja = ns.VERSION,
     staty = CH.staty, sesja = CH.sesja and CH.sesja.staty or nil,
     sesja_sek = CH.sesja and (ns.now() - CH.sesja.s) or nil,
