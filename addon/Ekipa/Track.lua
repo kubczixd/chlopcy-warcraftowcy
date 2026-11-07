@@ -56,10 +56,14 @@ ns.On("PLAYER_LEVEL_UP", function(newLevel)
   ns.state.lvl = lvl
   Add("awanse", 1)
   local t = now()
-  -- /played w chwili awansu: czekamy na odpowiedz serwera (najwyzej 10 s)
+  -- nowy poziom = czas na poziomie od zera (gdyby /reload przyszedl przed odpowiedzia serwera,
+  -- STAN mialby czas starego poziomu i strona policzylaby zly czas wejscia na poziom)
+  local est = ns.Played()
+  if est and ns.CH then ns.CH.played, ns.CH.played_lvl = est, 0; ns.state.playedGT = GetTime() end
+  -- /played w chwili awansu: czekamy na odpowiedz serwera (najwyzej 10 s), inaczej szacunek
   ns.RequestPlayed(function(total)
     local zone = ns.Zone()
-    Log("LVL", { lvl = lvl, played = total, strefa = zone }, t)
+    Log("LVL", { lvl = lvl, played = total or est, strefa = zone }, t)
   end)
   ns.msg(string.format("Poziom %d zapisany dla ekipy. Gratulacje!", lvl))
 end)
