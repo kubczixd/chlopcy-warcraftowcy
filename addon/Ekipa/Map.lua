@@ -94,7 +94,43 @@ local function rectOf(mapID)
   return k1, { round(x1), round(y1), round(x2), round(y2) }
 end
 
-local function layout()
+-- Siatka krain kontynentu: ktora kraina lezy w kazdej komorce (gra wie to dokladnie - GetMapInfoAtPosition).
+-- Zapis RLE: { id, ile, id, ile, ... } wierszami od gory; 0 = morze / nic. Strona uzywa jej do trafiania w krainy.
+local GRID = 96
+local function zoneGrid(contID, zoneSet)
+  if not (C_Map.GetMapInfoAtPosition and C_Map.GetMapInfo) then return nil end
+  local rle, last, run = {}, -1, 0
+  local cache = {}
+  for j = 0, GRID - 1 do
+    for i = 0, GRID - 1 do
+      local id = 0
+      local ok, info = pcall(C_Map.GetMapInfoAtPosition, contID, (i + 0.5) / GRID, (j + 0.5) / GRID)
+      if ok and info and info.mapID then
+        local m = info.mapID
+        if cache[m] == nil then
+          -- podstrefy / lochy -> kraina nadrzedna z listy krain kontynentu
+          local x, guard = m, 0
+          while x and not zoneSet[x] and guard < 5 do
+            local mi = C_Map.GetMapInfo(x)
+            x = mi and mi.parentMapID
+            guard = guard + 1
+          end
+          cache[m] = (x and zoneSet[x]) and x or 0
+        end
+        id = cache[m]
+      end
+      if id == last then run = run + 1
+      else
+        if run > 0 then rle[#rle + 1] = last; rle[#rle + 1] = run end
+        last, run = id, 1
+      end
+    end
+  end
+  rle[#rle + 1] = last; rle[#rle + 1] = run
+  return { n = GRID, rle = rle }
+end
+
+local function layout(withGrid)
   if not (hasMap and C_Map.GetMapChildrenInfo and C_Map.GetMapInfo and Enum and Enum.UIMapType and CreateVector2D) then return nil end
   local T = Enum.UIMapType
   -- kontynenty: dzieci mapy swiata (i kosmosu - na wypadek innych ukladow)
@@ -110,7 +146,14 @@ local function layout()
             local zk, zr = rectOf(z.mapID)
             if zk == k then zones[#zones + 1] = { id = z.mapID, nazwa = ns.Safe(z.name), r = zr } end
           end
-          conts[#conts + 1] = { id = info.mapID, k = k, nazwa = ns.Safe(info.name), r = r, strefy = zones }
+          local c = { id = info.mapID, k = k, nazwa = ns.Safe(info.name), r = r, strefy = zones }
+          if withGrid then
+            local set = {}
+            for _, z in ipairs(zones) do set[z.id] = true end
+            local ok2, g = pcall(zoneGrid, info.mapID, set)
+            if ok2 and g then c.siatka = g end
+          end
+          conts[#conts + 1] = c
         end
       end
     end
@@ -122,7 +165,7 @@ ns.Hook("start", function()
   C_Timer.After(20, function()
     pcall(sample)
     if ns.DB and ns.DB.meta.mapa ~= ns.VERSION then
-      local ok, conts = pcall(layout)
+      local ok, conts = pcall(layout, true)
       if ok and conts then
         ns.Log("MAPA", { kontynenty = conts })
         ns.DB.meta.mapa = ns.VERSION
