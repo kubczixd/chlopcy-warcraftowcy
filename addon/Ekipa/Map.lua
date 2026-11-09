@@ -142,32 +142,84 @@ function ns.MapProbe()
 end
 
 -------------------------------------------------------------------------------
--- /ekipa mapa: czysta mapa swiata do zrzutu ekranu (tla mapy na stronie)
+-- /ekipa mapa: czysta mapa do zrzutu ekranu (tla mapy na stronie).
+-- Rysujemy same tekstury mapy z gry we wlasnym oknie na czarnym tle - bez znacznikow gry
+-- i innych addonow (Questie itp.). Okno zamyka Esc albo klikniecie.
 -------------------------------------------------------------------------------
-local cleanOn, hooked = false, false
-local function setPins(alpha)
-  if not (WorldMapFrame and WorldMapFrame.EnumerateAllPins) then return end
-  for pin in WorldMapFrame:EnumerateAllPins() do pcall(pin.SetAlpha, pin, alpha) end
+local shot
+local function shotFrame()
+  if shot then return shot end
+  shot = CreateFrame("Frame", "EkipaMapShot", UIParent)
+  shot:SetFrameStrata("FULLSCREEN_DIALOG")
+  shot:SetAllPoints(UIParent)
+  shot:EnableMouse(true)
+  shot:EnableKeyboard(true)
+  local bg = shot:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(0, 0, 0, 1)
+  shot.canvas = CreateFrame("Frame", nil, shot)
+  shot.canvas:SetClipsChildren(true)
+  shot.tiles = {}
+  shot.info = shot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  shot.info:SetPoint("BOTTOM", 0, 6)
+  shot:SetScript("OnMouseDown", function(f) f:Hide() end)
+  shot:SetScript("OnKeyDown", function(f, key)
+    if key == "ESCAPE" then f:SetPropagateKeyboardInput(false); f:Hide()
+    else f:SetPropagateKeyboardInput(true) end -- Print Screen dziala dalej
+  end)
+  shot:Hide()
+  return shot
 end
-function ns.CleanMap()
-  if not WorldMapFrame then ns.msg("Ta wersja gry nie ma mapy swiata dla addonow.") return end
+
+local function showArt(mapID)
+  if not (C_Map and C_Map.GetMapArtLayers and C_Map.GetMapArtLayerTextures) then
+    ns.msg("Ta wersja gry nie podaje addonom tekstur mapy.")
+    return
+  end
+  local layers = C_Map.GetMapArtLayers(mapID)
+  local L = layers and layers[1]
+  local tex = C_Map.GetMapArtLayerTextures(mapID, 1)
+  if not L or not tex or #tex == 0 then ns.msg("Brak tekstur mapy dla tej krainy (" .. tostring(mapID) .. ").") return end
+  local f = shotFrame()
+  local W, H = L.layerWidth, L.layerHeight
+  local tw, th = L.tileWidth, L.tileHeight
+  local cols = math.ceil(W / tw)
+  -- skala: cala mapa na ekranie (z marginesem na podpis)
+  local sw, sh = UIParent:GetWidth(), UIParent:GetHeight() - 24
+  local k = math.min(sw / W, sh / H)
+  f.canvas:ClearAllPoints()
+  f.canvas:SetSize(W * k, H * k)
+  f.canvas:SetPoint("CENTER", 0, 10)
+  for _, t in ipairs(f.tiles) do t:Hide() end
+  for i, fileID in ipairs(tex) do
+    local t = f.tiles[i] or f.canvas:CreateTexture(nil, "ARTWORK")
+    f.tiles[i] = t
+    local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+    t:ClearAllPoints()
+    t:SetSize(tw * k, th * k)
+    t:SetPoint("TOPLEFT", f.canvas, "TOPLEFT", col * tw * k, -row * th * k)
+    t:SetTexture(fileID)
+    t:Show()
+  end
+  local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+  f.info:SetText(string.format("%s (mapa %d) - zrob zrzut (Print Screen), Esc zamyka", info and ns.Safe(info.name) or "?", mapID))
+  if WorldMapFrame and WorldMapFrame:IsShown() and HideUIPanel then pcall(HideUIPanel, WorldMapFrame) end
+  f:Show()
+end
+
+-- /ekipa mapa [kontynent]: kraina otwarta na mapie swiata (albo ta, w ktorej jestes); "kontynent" - caly kontynent
+function ns.CleanMap(arg)
   if InCombatLockdown and InCombatLockdown() then ns.msg("Najpierw wyjdz z walki.") return end
-  if not WorldMapFrame:IsShown() then
-    if ToggleWorldMap then ToggleWorldMap() else WorldMapFrame:Show() end
+  local m = WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+  m = m or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
+  if not m then ns.msg("Nie wiem, ktora mape pokazac - otworz mape swiata (M) na wybranej krainie i wpisz /ekipa mapa.") return end
+  if arg == "kontynent" and C_Map.GetMapInfo then
+    local info = C_Map.GetMapInfo(m)
+    while info and Enum and Enum.UIMapType and info.mapType and info.mapType > Enum.UIMapType.Continent and info.parentMapID do
+      m = info.parentMapID
+      info = C_Map.GetMapInfo(m)
+    end
   end
-  if not hooked then
-    hooked = true
-    WorldMapFrame:HookScript("OnHide", function()
-      if cleanOn then cleanOn = false; setPins(1) end
-    end)
-  end
-  cleanOn = true
-  -- gra odswieza znaczniki co chwile (zmiana krainy, questy) - chowamy je, dopoki mapa jest otwarta
-  local function tick()
-    if not cleanOn then return end
-    setPins(0)
-    C_Timer.After(0.2, tick)
-  end
-  tick()
-  ns.msg("Czysta mapa: znaczniki schowane. Wybierz kraine (albo caly kontynent) i zrob zrzut (Print Screen). Zamknij mape, zeby wrocily.")
+  local ok, err = pcall(showArt, m)
+  if not ok then ns.msg("Nie udalo sie pokazac mapy: " .. tostring(err)) end
 end
