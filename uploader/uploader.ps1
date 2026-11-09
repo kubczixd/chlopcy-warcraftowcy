@@ -10,7 +10,7 @@
 # Dziennik: %LOCALAPPDATA%\EkipaWoW\uploader.log
 # Plik tylko ASCII (Windows PowerShell 5.1 czyta skrypty bez BOM jako ANSI).
 
-$UploaderVersion = '1.0.3'
+$UploaderVersion = '1.0.4'
 $ErrorActionPreference = 'Stop'
 $Dir = Join-Path $env:LOCALAPPDATA 'EkipaWoW'
 $ConfigPath = Join-Path $Dir 'config.json'
@@ -111,7 +111,7 @@ function Send-MapShot($ev, $file) {
 }
 
 # ZRZUT z addonu -> plik zrzutu z tego samego czasu (zegar komputera); kolejne zrzuty sa co > 1 s
-function Send-MapShots($shots) {
+function Send-MapShots($shots, $last) {
   if (-not $shots.Count) { return }
   $files = Get-ShotFiles
   $used = @{}
@@ -120,7 +120,10 @@ function Send-MapShots($shots) {
       $when = [DateTimeOffset]::FromUnixTimeSeconds([long]$ev.d.lokalnie).LocalDateTime
       $best = $files | Where-Object { -not $used[$_.FullName] } |
         Sort-Object { [Math]::Abs(($_.LastWriteTime - $when).TotalSeconds) } | Select-Object -First 1
-      if (-not $best -or [Math]::Abs(($best.LastWriteTime - $when).TotalSeconds) -gt 3) { Write-Log "Mapa $($ev.d.mapa): nie znalazlem pliku zrzutu"; continue }
+      if (-not $best -or [Math]::Abs(($best.LastWriteTime - $when).TotalSeconds) -gt 3) {
+        if ([long]$ev.n -gt $last) { Write-Log "Mapa $($ev.d.mapa): nie znalazlem pliku zrzutu" }
+        continue
+      }
       $used[$best.FullName] = $true
       Send-MapShot $ev $best
     } catch { Write-Log "Mapa $($ev.d.mapa): blad zrzutu - $($_.Exception.Message)" }
@@ -142,16 +145,19 @@ function Send-File($file) {
   $shots = New-Object System.Collections.Generic.List[object]
   foreach ($l in $lines) {
     $m = $EventRx.Match($l)
-    if ($m.Success -and [long]$m.Groups[2].Value -gt $last) {
+    if (-not $m.Success) { continue }
+    $raw = $m.Groups[1].Value
+    # zrzuty mapy: wszystkie z pliku (wyslany zrzut jest usuwany z dysku, wiec drugi raz sie nie wysle;
+    # tak nadrabiamy tez zrzuty, ktorych zdarzenia wyslal starszy uploader)
+    if ($raw.Contains('\"e\":\"ZRZUT\"')) {
+      try { $shots.Add((($raw -replace '\\(["\\])', '$1') | ConvertFrom-Json)) } catch {}
+    }
+    if ([long]$m.Groups[2].Value -gt $last) {
       # tekst wysylamy tak, jak jest w pliku (z ucieczkami Lua) - strona sama go odkoduje
-      $raw = $m.Groups[1].Value
       $events.Add('"' + $raw.Replace('\', '\\').Replace('"', '\"') + '"')
-      if ($raw.Contains('\"e\":\"ZRZUT\"')) {
-        try { $shots.Add((($raw -replace '\\(["\\])', '$1') | ConvertFrom-Json)) } catch {}
-      }
     }
   }
-  if ($events.Count -eq 0) { return }
+  if ($events.Count -eq 0) { Send-MapShots $shots $last; return }
   $sent = 0
   for ($i = 0; $i -lt $events.Count; $i += 400) {
     $chunk = $events.GetRange($i, [Math]::Min(400, $events.Count - $i))
@@ -160,7 +166,7 @@ function Send-File($file) {
     $sent += [int]$r.added
   }
   Write-Log ("Wyslano {0} nowych zdarzen ({1}), konto {2}" -f $sent, $file.Directory.Parent.Name, $konto)
-  Send-MapShots $shots
+  Send-MapShots $shots $last
 }
 
 # --- aktualizacje -------------------------------------------------------------
