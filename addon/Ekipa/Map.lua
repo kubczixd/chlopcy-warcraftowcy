@@ -279,7 +279,7 @@ function ns.CleanMap(arg)
 end
 
 -------------------------------------------------------------------------------
--- Automatyczne zrzuty mapy: po odkryciu nowego terenu (i raz wszystko, co juz odkryte) addon na ~0.2 s
+-- Automatyczne zrzuty mapy: po odkryciu nowego terenu (i raz wszystkie krainy i kontynenty) addon na ~0.2 s
 -- pokazuje czysta mape krainy i robi zrzut ekranu. ZRZUT mowi uploaderowi, gdzie na zrzucie jest mapa;
 -- uploader wycina ja i wysyla na strone (tlo mapy), a zrzut usuwa. Nigdy w walce. /ekipa mapa auto - wylacz.
 -------------------------------------------------------------------------------
@@ -296,17 +296,15 @@ end
 
 local function shotsOff() return not Screenshot or (ns.DB and ns.DB.meta.bez_zrzutow) or not ns.CH end
 
--- force: zrob, nawet gdy nic nie odkryto (kontynent - raz na postac)
+-- force: zrob raz, nawet gdy nic nie odkryto (kontynenty i nieodwiedzone krainy - sam podklad mapy);
+-- potem nowy zrzut tylko, gdy odkryto wiecej
 local function want(m, force)
   if not m or shotsOff() then return end
   ns.CH.zrzuty = ns.CH.zrzuty or {}
   local n = exploredCount(m)
   local was = ns.CH.zrzuty[m]
-  if force then
-    if was then return end
-  elseif n == 0 or (was and n <= was.n) then
-    return
-  end
+  if was and n <= was.n then return end
+  if not was and n == 0 and not force then return end
   for _, q in ipairs(queue) do if q == m then return end end
   queue[#queue + 1] = m
 end
@@ -363,8 +361,8 @@ local function finish(ok)
     end
   end
   busy = false
-  -- odstep > 1 s: kazdy zrzut ma inna sekunde w czasie pliku
-  C_Timer.After(1.2, function() pcall(ns.ShotNext) end)
+  -- zrzuty maja kod mapy, wiec moga isc szybko jeden po drugim
+  C_Timer.After(0.4, function() pcall(ns.ShotNext) end)
 end
 
 function ns.ShotNext()
@@ -397,7 +395,7 @@ ns.On("MAP_EXPLORATION_UPDATED", function() C_Timer.After(1, function() pcall(ch
 ns.On("ZONE_CHANGED", function() C_Timer.After(1, function() pcall(checkHere) end) end)
 if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(20, function() pcall(checkHere) end) end
 
--- raz po wejsciu: wszystko, co ta postac juz odkryla, i oba kontynenty
+-- raz po wejsciu: wszystkie krainy (takze nieodwiedzone - sam podklad mapy) i kontynenty
 ns.Hook("start", function()
   C_Timer.After(30, function()
     if shotsOff() then return end
@@ -405,7 +403,7 @@ ns.Hook("start", function()
     if ns.CH.zrzuty_v ~= 2 then ns.CH.zrzuty = {}; ns.CH.zrzuty_v = 2 end
     local ok, conts = pcall(layout)
     for _, c in ipairs(ok and conts or {}) do
-      for _, z in ipairs(c.strefy) do want(z.id) end
+      for _, z in ipairs(c.strefy) do want(z.id, true) end -- wszystkie krainy, takze nieodwiedzone
       want(c.id, true)
     end
     pcall(ns.ShotNext)
