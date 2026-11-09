@@ -201,6 +201,38 @@ local function showArt(mapID)
     t:SetTexture(fileID)
     t:Show()
   end
+  -- nakladki odkrytych terenow (drogi, pola, budynki) - jak w grze (MapExplorationPin), kafelki po 256 px
+  f.overlays = f.overlays or {}
+  for _, t in ipairs(f.overlays) do t:Hide() end
+  local n = 0
+  local explored = C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures and C_MapExplorationInfo.GetExploredMapTextures(mapID)
+  local TILE = 256
+  local function fileSize(px) local v = 16; while v < px do v = v * 2 end; return v end
+  for _, e in ipairs(explored or {}) do
+    if not e.isShownByMouseOver and e.fileDataIDs then
+      local wide, tall = math.ceil(e.textureWidth / TILE), math.ceil(e.textureHeight / TILE)
+      for j = 1, tall do
+        local ph, fh = TILE, TILE
+        if j == tall then ph = e.textureHeight % TILE; if ph == 0 then ph = TILE end; fh = fileSize(ph) end
+        for c = 1, wide do
+          local pw, fw = TILE, TILE
+          if c == wide then pw = e.textureWidth % TILE; if pw == 0 then pw = TILE end; fw = fileSize(pw) end
+          local id = e.fileDataIDs[(j - 1) * wide + c]
+          if id then
+            n = n + 1
+            local t = f.overlays[n] or f.canvas:CreateTexture(nil, "ARTWORK", nil, 1)
+            f.overlays[n] = t
+            t:ClearAllPoints()
+            t:SetSize(pw * k, ph * k)
+            t:SetTexCoord(0, pw / fw, 0, ph / fh)
+            t:SetPoint("TOPLEFT", f.canvas, "TOPLEFT", (e.offsetX + TILE * (c - 1)) * k, -(e.offsetY + TILE * (j - 1)) * k)
+            t:SetTexture(id)
+            t:Show()
+          end
+        end
+      end
+    end
+  end
   local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
   f.info:SetText(string.format("%s (mapa %d) - zrob zrzut (Print Screen), Esc zamyka", info and ns.Safe(info.name) or "?", mapID))
   if WorldMapFrame and WorldMapFrame:IsShown() and HideUIPanel then pcall(HideUIPanel, WorldMapFrame) end
