@@ -3,13 +3,14 @@
 #  1. co 15 s sprawdza pliki World of Warcraft\_*_\WTF\Account\*\SavedVariables\Ekipa.lua
 #  2. gdy plik sie zmienil (gra zapisuje go przy /reload, wylogowaniu i wyjsciu), pyta strone,
 #     ktore zdarzenie ma jako ostatnie, i wysyla tylko nowsze,
-#  3. na starcie, co 30 min i zaraz po wylaczeniu gry sprawdza nowa wersje addonu i uploadera;
+#  3. zrzuty mapy zrobione przez addon (ZRZUT): wycina sama mape, wysyla na strone (tlo mapy), usuwa zrzut,
+#  4. na starcie, co 30 min i zaraz po wylaczeniu gry sprawdza nowa wersje addonu i uploadera;
 #     addon podmienia, gdy gra jest wylaczona.
 # Konfiguracja: %LOCALAPPDATA%\EkipaWoW\config.json (token, adres strony, folder gry).
 # Dziennik: %LOCALAPPDATA%\EkipaWoW\uploader.log
 # Plik tylko ASCII (Windows PowerShell 5.1 czyta skrypty bez BOM jako ANSI).
 
-$UploaderVersion = '1.0.2'
+$UploaderVersion = '1.0.3'
 $ErrorActionPreference = 'Stop'
 $Dir = Join-Path $env:LOCALAPPDATA 'EkipaWoW'
 $ConfigPath = Join-Path $Dir 'config.json'
@@ -69,6 +70,63 @@ function Get-SavedFiles {
   return @(Get-ChildItem -Path (Join-Path $root '_*_\WTF\Account\*\SavedVariables\Ekipa.lua') -ErrorAction SilentlyContinue)
 }
 
+try { Add-Type -AssemblyName System.Drawing } catch {}
+
+# --- zrzuty mapy ---------------------------------------------------------------
+function Get-ShotFiles {
+  $all = @()
+  foreach ($f in @($cfg.flavors)) {
+    $dir = Join-Path $cfg.wow "$f\Screenshots"
+    if (Test-Path $dir) { $all += @(Get-ChildItem -Path $dir -Filter 'WoWScrnShot_*.jpg' -ErrorAction SilentlyContinue) }
+  }
+  return $all
+}
+
+function Send-MapShot($ev, $file) {
+  $d = $ev.d
+  $img = [Drawing.Image]::FromFile($file.FullName)
+  $bmp = $null; $crop = $null; $ms = New-Object IO.MemoryStream
+  try {
+    $k = $img.Height / [double]$d.ekran[1]
+    $r = @($d.r | ForEach-Object { [int]([double]$_ * $k) })
+    $rect = New-Object Drawing.Rectangle $r[0], $r[1], $r[2], $r[3]
+    $rect = [Drawing.Rectangle]::Intersect($rect, (New-Object Drawing.Rectangle 0, 0, $img.Width, $img.Height))
+    if ($rect.Width -lt 50 -or $rect.Height -lt 50) { Write-Log "Zrzut mapy $($d.mapa): zly prostokat - pomijam"; return }
+    $bmp = New-Object Drawing.Bitmap $img
+    $crop = $bmp.Clone($rect, $bmp.PixelFormat)
+    $enc = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+    $ep = New-Object Drawing.Imaging.EncoderParameters 1
+    $ep.Param[0] = New-Object Drawing.Imaging.EncoderParameter ([Drawing.Imaging.Encoder]::Quality), ([long]88)
+    $crop.Save($ms, $enc, $ep)
+  } finally {
+    if ($crop) { $crop.Dispose() }
+    if ($bmp) { $bmp.Dispose() }
+    $img.Dispose()
+  }
+  $b64 = [Convert]::ToBase64String($ms.ToArray())
+  $json = '{"mapa":' + [int]$d.mapa + ',"odkryte":' + [int]$d.odkryte + ',"img":"' + $b64 + '"}'
+  $res = Invoke-Api 'POST' '/api/wow/mapshot' $json
+  Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
+  Write-Log ("Mapa {0}: wyslano zrzut ({1} odkrytych, {2})" -f $d.mapa, $d.odkryte, $(if ($res.saved) { 'nowe tlo' } else { 'strona ma lepszy' }))
+}
+
+# ZRZUT z addonu -> plik zrzutu z tego samego czasu (zegar komputera); kolejne zrzuty sa co > 1 s
+function Send-MapShots($shots) {
+  if (-not $shots.Count) { return }
+  $files = Get-ShotFiles
+  $used = @{}
+  foreach ($ev in $shots) {
+    try {
+      $when = [DateTimeOffset]::FromUnixTimeSeconds([long]$ev.d.lokalnie).LocalDateTime
+      $best = $files | Where-Object { -not $used[$_.FullName] } |
+        Sort-Object { [Math]::Abs(($_.LastWriteTime - $when).TotalSeconds) } | Select-Object -First 1
+      if (-not $best -or [Math]::Abs(($best.LastWriteTime - $when).TotalSeconds) -gt 3) { Write-Log "Mapa $($ev.d.mapa): nie znalazlem pliku zrzutu"; continue }
+      $used[$best.FullName] = $true
+      Send-MapShot $ev $best
+    } catch { Write-Log "Mapa $($ev.d.mapa): blad zrzutu - $($_.Exception.Message)" }
+  }
+}
+
 $EventRx = [regex]'^\s*"(\{\\"n\\":(\d+),.*\})",?\s*(--.*)?$'
 $KontoRx = [regex]'\["konto"\]\s*=\s*"([0-9a-f]+)"'
 
@@ -81,12 +139,16 @@ function Send-File($file) {
   $info = Invoke-Api 'GET' "/api/wow/ingest?konto=$konto" $null
   $last = [long]$info.last_n
   $events = New-Object System.Collections.Generic.List[string]
+  $shots = New-Object System.Collections.Generic.List[object]
   foreach ($l in $lines) {
     $m = $EventRx.Match($l)
     if ($m.Success -and [long]$m.Groups[2].Value -gt $last) {
       # tekst wysylamy tak, jak jest w pliku (z ucieczkami Lua) - strona sama go odkoduje
       $raw = $m.Groups[1].Value
       $events.Add('"' + $raw.Replace('\', '\\').Replace('"', '\"') + '"')
+      if ($raw.Contains('\"e\":\"ZRZUT\"')) {
+        try { $shots.Add((($raw -replace '\\(["\\])', '$1') | ConvertFrom-Json)) } catch {}
+      }
     }
   }
   if ($events.Count -eq 0) { return }
@@ -98,6 +160,7 @@ function Send-File($file) {
     $sent += [int]$r.added
   }
   Write-Log ("Wyslano {0} nowych zdarzen ({1}), konto {2}" -f $sent, $file.Directory.Parent.Name, $konto)
+  Send-MapShots $shots
 }
 
 # --- aktualizacje -------------------------------------------------------------

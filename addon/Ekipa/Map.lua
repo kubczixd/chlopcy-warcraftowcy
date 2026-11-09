@@ -171,7 +171,7 @@ local function shotFrame()
   return shot
 end
 
-local function showArt(mapID)
+local function showArt(mapID, quiet)
   if not (C_Map and C_Map.GetMapArtLayers and C_Map.GetMapArtLayerTextures) then
     ns.msg("Ta wersja gry nie podaje addonom tekstur mapy.")
     return
@@ -234,13 +234,18 @@ local function showArt(mapID)
     end
   end
   local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
-  f.info:SetText(string.format("%s (mapa %d) - zrob zrzut (Print Screen), Esc zamyka", info and ns.Safe(info.name) or "?", mapID))
-  if WorldMapFrame and WorldMapFrame:IsShown() and HideUIPanel then pcall(HideUIPanel, WorldMapFrame) end
+  f.info:SetText(quiet and "" or string.format("%s (mapa %d) - zrob zrzut (Print Screen), Esc zamyka", info and ns.Safe(info.name) or "?", mapID))
+  if not quiet and WorldMapFrame and WorldMapFrame:IsShown() and HideUIPanel then pcall(HideUIPanel, WorldMapFrame) end
   f:Show()
 end
 
 -- /ekipa mapa [kontynent]: kraina otwarta na mapie swiata (albo ta, w ktorej jestes); "kontynent" - caly kontynent
 function ns.CleanMap(arg)
+  if arg == "auto" then
+    ns.DB.meta.bez_zrzutow = not ns.DB.meta.bez_zrzutow
+    ns.msg("Automatyczne zrzuty mapy (tla mapy na stronie): " .. (ns.DB.meta.bez_zrzutow and "wylaczone" or "wlaczone"))
+    return
+  end
   if InCombatLockdown and InCombatLockdown() then ns.msg("Najpierw wyjdz z walki.") return end
   local m = WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
   m = m or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
@@ -270,3 +275,105 @@ function ns.CleanMap(arg)
   local ok, err = pcall(showArt, m)
   if not ok then ns.msg("Nie udalo sie pokazac mapy: " .. tostring(err)) end
 end
+
+-------------------------------------------------------------------------------
+-- Automatyczne zrzuty mapy: po odkryciu nowego terenu (i raz wszystko, co juz odkryte) addon na ~0.2 s
+-- pokazuje czysta mape krainy i robi zrzut ekranu. ZRZUT mowi uploaderowi, gdzie na zrzucie jest mapa;
+-- uploader wycina ja i wysyla na strone (tlo mapy), a zrzut usuwa. Nigdy w walce. /ekipa mapa auto - wylacz.
+-------------------------------------------------------------------------------
+local queue, busy, pending = {}, false, nil
+
+local function exploredCount(m)
+  local ok, list = pcall(function() return C_MapExplorationInfo.GetExploredMapTextures(m) end)
+  local n = 0
+  for _, e in ipairs(ok and list or {}) do
+    if not e.isShownByMouseOver then n = n + #(e.fileDataIDs or {}) end
+  end
+  return n
+end
+
+local function shotsOff() return not Screenshot or (ns.DB and ns.DB.meta.bez_zrzutow) or not ns.CH end
+
+-- force: zrob, nawet gdy nic nie odkryto (kontynent - raz na postac)
+local function want(m, force)
+  if not m or shotsOff() then return end
+  ns.CH.zrzuty = ns.CH.zrzuty or {}
+  local n = exploredCount(m)
+  local was = ns.CH.zrzuty[m]
+  if force then
+    if was then return end
+  elseif n == 0 or (was and n <= was.n) then
+    return
+  end
+  for _, q in ipairs(queue) do if q == m then return end end
+  queue[#queue + 1] = m
+end
+
+-- prostokat mapy na zrzucie w pikselach (od lewego gornego rogu) i rozmiar ekranu
+local function canvasRect()
+  local sw, sh = GetPhysicalScreenSize()
+  local c = shot.canvas
+  local k = c:GetEffectiveScale() * sh / 768
+  return { math.floor(c:GetLeft() * k + 0.5), math.floor(sh - c:GetTop() * k + 0.5), math.floor(c:GetWidth() * k + 0.5), math.floor(c:GetHeight() * k + 0.5) }, { sw, sh }
+end
+
+local function finish(ok)
+  local p = pending
+  pending = nil
+  if shot then shot:Hide() end
+  if p then
+    if p.fmt then pcall(SetCVar, "screenshotFormat", p.fmt) end
+    if p.q then pcall(SetCVar, "screenshotQuality", p.q) end
+    if ok then
+      ns.CH.zrzuty[p.m] = { n = p.n, t = ns.now() }
+      -- lokalnie = zegar komputera (uploader po nim znajduje plik zrzutu)
+      ns.Log("ZRZUT", { mapa = p.m, odkryte = p.n, r = p.r, ekran = p.ekran, lokalnie = time() })
+    end
+  end
+  busy = false
+  -- odstep > 1 s: kazdy zrzut ma inna sekunde w czasie pliku
+  C_Timer.After(1.2, function() pcall(ns.ShotNext) end)
+end
+
+function ns.ShotNext()
+  if busy or #queue == 0 or shotsOff() then return end
+  if (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player")) then
+    C_Timer.After(5, function() pcall(ns.ShotNext) end)
+    return
+  end
+  local m = table.remove(queue, 1)
+  busy = true
+  local ok = pcall(showArt, m, true)
+  if not ok or not shot or not shot:IsShown() then busy = false; return ns.ShotNext() end
+  local r, ekran = canvasRect()
+  pending = { m = m, n = exploredCount(m), r = r, ekran = ekran, fmt = GetCVar and GetCVar("screenshotFormat"), q = GetCVar and GetCVar("screenshotQuality") }
+  pcall(SetCVar, "screenshotFormat", "jpg")
+  pcall(SetCVar, "screenshotQuality", "10")
+  -- chwila na wczytanie tekstur, potem zrzut; bez odpowiedzi gry po 3 s - zamykamy
+  C_Timer.After(0.15, function() if pending and pending.m == m then Screenshot() end end)
+  C_Timer.After(3, function() if pending and pending.m == m then finish(false) end end)
+end
+ns.On("SCREENSHOT_SUCCEEDED", function() if pending then finish(true) end end)
+ns.On("SCREENSHOT_FAILED", function() if pending then finish(false) end end)
+
+local function checkHere()
+  if shotsOff() then return end
+  want(C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
+  ns.ShotNext()
+end
+ns.On("MAP_EXPLORATION_UPDATED", function() C_Timer.After(1, function() pcall(checkHere) end) end)
+ns.On("ZONE_CHANGED", function() C_Timer.After(1, function() pcall(checkHere) end) end)
+if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(20, function() pcall(checkHere) end) end
+
+-- raz po wejsciu: wszystko, co ta postac juz odkryla, i oba kontynenty
+ns.Hook("start", function()
+  C_Timer.After(30, function()
+    if shotsOff() then return end
+    local ok, conts = pcall(layout)
+    for _, c in ipairs(ok and conts or {}) do
+      for _, z in ipairs(c.strefy) do want(z.id) end
+      want(c.id, true)
+    end
+    pcall(ns.ShotNext)
+  end)
+end)

@@ -421,6 +421,7 @@ SlashCmdList.EKIPA = function(arg)
     ns.msg("/ekipa mapa - czysta mapa krainy do zrzutu (kraina otwarta na mapie swiata albo ta, w ktorej jestes); Esc zamyka")
     ns.msg("/ekipa mapa kontynent - to samo dla calego kontynentu")
     ns.msg("/ekipa mapa <nazwa> - wybrana kraina albo kontynent, np. /ekipa mapa duskwood, /ekipa mapa kalimdor")
+    ns.msg("/ekipa mapa auto - wylacz / wlacz automatyczne zrzuty mapy po odkryciu terenu (tla mapy na stronie)")
     ns.msg("/ekipa debug - pokazuj na czacie kazde zapisane zdarzenie")
   else
     status()
