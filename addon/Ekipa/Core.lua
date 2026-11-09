@@ -153,6 +153,7 @@ function ns.Log(e, d, t)
   if not DB or not CH or not CH.sesja then return end
   DB.meta.n = DB.meta.n + 1
   t = t or ns.now()
+  if ns.AttachPos then pcall(ns.AttachPos, e, d) end -- miejsce na mapie (Map.lua)
   local line = '{"n":' .. DB.meta.n .. ',"t":' .. t .. ',"s":' .. CH.sesja.s .. ',"c":' .. enc(CH.klucz or "?")
     .. ',"e":' .. enc(e) .. ',"d":' .. ns.Json(d or {}) .. '}'
   EkipaLog[#EkipaLog + 1] = line

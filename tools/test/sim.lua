@@ -95,12 +95,35 @@ function GetInboxHeaderInfo(i) local m = MAIL[i]; return nil, nil, "Auction Hous
 function GetInboxInvoiceInfo(i) local m = MAIL[i]; if m.inv then return unpack(m.inv) end end
 function TakeInboxMoney(i) end
 function TakeInboxItem(i) end
+-- mapa: kraina 1429 (Elwynn) na kontynencie 1415 (swiat 0); pozycja z S.px/S.py
+S.px, S.py = 0.5, 0.5
+local function V(x, y) return { x = x, y = y, GetXY = function(v) return v.x, v.y end } end
+function CreateVector2D(x, y) return V(x, y) end
+Enum = { UIMapType = { Continent = 2, Zone = 3 } }
+local RECT = { [1429] = { -7000, 0, -10000, -3500 }, [1415] = { 4000, 4000, -16000, -6000 } }
+C_Map = {
+  GetBestMapForUnit = function() return S.inst and nil or 1429 end,
+  GetPlayerMapPosition = function() return V(S.px, S.py) end,
+  GetWorldPosFromMapPos = function(m, p)
+    local r = RECT[m]; if not r then return nil end
+    return 0, V(r[1] + (r[3] - r[1]) * p.x, r[2] + (r[4] - r[2]) * p.y)
+  end,
+  GetMapInfo = function(m) return { mapID = m, name = m == 1415 and "Eastern Kingdoms" or "Elwynn Forest" } end,
+  GetMapChildrenInfo = function(m, t)
+    if m == 947 and t == 2 then return { { mapID = 1415, name = "Eastern Kingdoms" } } end
+    if m == 1415 and t == 3 then return { { mapID = 1429, name = "Elwynn Forest" } } end
+    return {}
+  end,
+}
+local tickers = {}
+C_Timer.NewTicker = function(s, fn) table.insert(tickers, fn) end
+function TICK() for _, f in ipairs(tickers) do f() end end
 unpack = unpack or table.unpack
 wipe = function(t) for k in pairs(t) do t[k] = nil end end
 
 -- wczytanie addonu -----------------------------------------------------------
 local ns = {}
-for _, f in ipairs({ "Json.lua", "Core.lua", "Track.lua", "History.lua" }) do
+for _, f in ipairs({ "Json.lua", "Core.lua", "Track.lua", "History.lua", "Map.lua" }) do
   local chunk = assert(loadfile(dir .. "/" .. f))
   chunk("Ekipa", ns)
 end
@@ -136,6 +159,9 @@ advance(700)
 S.taxi = true; fire("PLAYER_CONTROL_LOST"); advance(2)
 SlashCmdList.EKIPA("")
 SlashCmdList.EKIPA("sonda")
+-- trasa: kilka krokow (ostatni za maly - pominiety)
+for i = 1, 4 do S.px = 0.5 + i * 0.01; TICK() end
+S.px = S.px + 0.0001; TICK()
 -- dom aukcyjny: pieniadze ze sprzedazy, przedmiot z wygranej, zwrot za przebicie (dwa klikniecia w ten sam list)
 fire("MAIL_SHOW")
 TakeInboxMoney(1); TakeInboxMoney(1); TakeInboxItem(2, 1); TakeInboxMoney(3)

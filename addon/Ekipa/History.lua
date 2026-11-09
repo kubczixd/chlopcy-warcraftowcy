@@ -186,5 +186,9 @@ function ns.Probe()
     .. ", combat log: " .. yn(ns.isClassic) .. ", HK od poczatku: " .. tostring(try(GetPVPLifetimeStats) or "nie"))
   local played = ns.Played()
   ns.msg("Czas gry (/played): " .. (played and ns.Dur(played) or "czekam na serwer") .. ". Profesje: " .. yn(professions()))
+  if ns.MapProbe then
+    local pos, lay = ns.MapProbe()
+    ns.msg("Pozycja na mapie: " .. pos .. ". Uklad mapy: " .. lay)
+  end
   ns.msg("Skopiuj albo zrob zrzut ekranu tych linii i wyslij Kubie :)")
 end
