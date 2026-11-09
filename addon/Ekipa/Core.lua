@@ -410,8 +410,8 @@ SlashCmdList.EKIPA = function(arg)
     ns.Probe()
   elseif arg == "historia" then
     ns.SendHistory("komenda")
-  elseif arg == "mapa" or arg == "mapa kontynent" then
-    if ns.CleanMap then ns.CleanMap(arg == "mapa kontynent" and "kontynent" or nil) end
+  elseif arg == "mapa" or arg:match("^mapa ") then
+    if ns.CleanMap then ns.CleanMap(arg:match("^mapa%s+(.+)$")) end
   elseif arg == "pomoc" or arg == "help" then
     ns.msg("/ekipa - stan zbierania danych")
     ns.msg("/ekipa zapisz - zapis danych (/reload)")
@@ -420,6 +420,7 @@ SlashCmdList.EKIPA = function(arg)
     ns.msg("/ekipa historia - wyslij jeszcze raz dane wstecz (questy, statystyki, osiagniecia)")
     ns.msg("/ekipa mapa - czysta mapa krainy do zrzutu (kraina otwarta na mapie swiata albo ta, w ktorej jestes); Esc zamyka")
     ns.msg("/ekipa mapa kontynent - to samo dla calego kontynentu")
+    ns.msg("/ekipa mapa <nazwa> - wybrana kraina albo kontynent, np. /ekipa mapa duskwood, /ekipa mapa kalimdor")
     ns.msg("/ekipa debug - pokazuj na czacie kazde zapisane zdarzenie")
   else
     status()

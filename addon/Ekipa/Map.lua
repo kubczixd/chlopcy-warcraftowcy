@@ -245,6 +245,21 @@ function ns.CleanMap(arg)
   local m = WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
   m = m or (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"))
   if not m then ns.msg("Nie wiem, ktora mape pokazac - otworz mape swiata (M) na wybranej krainie i wpisz /ekipa mapa.") return end
+  if arg and arg ~= "kontynent" then
+    -- po nazwie: krainy i kontynenty z ukladu mapy (dokladna nazwa wygrywa, inaczej pierwsza zawierajaca tekst)
+    local ok, conts = pcall(layout)
+    local exact, part
+    local q = arg:lower()
+    for _, c in ipairs(ok and conts or {}) do
+      for _, z in ipairs({ c, unpack(c.strefy) }) do
+        local name = type(z.nazwa) == "string" and z.nazwa:lower() or ""
+        if name == q then exact = exact or z.id
+        elseif name ~= "" and name:find(q, 1, true) then part = part or z.id end
+      end
+    end
+    m = exact or part
+    if not m then ns.msg("Nie znam krainy \"" .. arg .. "\" - podaj nazwe po angielsku jak w grze, np. Duskwood, Elwynn Forest, Kalimdor.") return end
+  end
   if arg == "kontynent" and C_Map.GetMapInfo then
     local info = C_Map.GetMapInfo(m)
     while info and Enum and Enum.UIMapType and info.mapType and info.mapType > Enum.UIMapType.Continent and info.parentMapID do
