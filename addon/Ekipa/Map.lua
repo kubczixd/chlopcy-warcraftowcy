@@ -140,3 +140,34 @@ function ns.MapProbe()
   return k and string.format("tak (kontynent %s, x %d, y %d, kraina %s)", tostring(k), x, y, tostring(m)) or "nie (loch albo gra nie podaje)",
     ok and conts and string.format("%d kontynenty, %d krain", #conts, nz) or "nie"
 end
+
+-------------------------------------------------------------------------------
+-- /ekipa mapa: czysta mapa swiata do zrzutu ekranu (tla mapy na stronie)
+-------------------------------------------------------------------------------
+local cleanOn, hooked = false, false
+local function setPins(alpha)
+  if not (WorldMapFrame and WorldMapFrame.EnumerateAllPins) then return end
+  for pin in WorldMapFrame:EnumerateAllPins() do pcall(pin.SetAlpha, pin, alpha) end
+end
+function ns.CleanMap()
+  if not WorldMapFrame then ns.msg("Ta wersja gry nie ma mapy swiata dla addonow.") return end
+  if InCombatLockdown and InCombatLockdown() then ns.msg("Najpierw wyjdz z walki.") return end
+  if not WorldMapFrame:IsShown() then
+    if ToggleWorldMap then ToggleWorldMap() else WorldMapFrame:Show() end
+  end
+  if not hooked then
+    hooked = true
+    WorldMapFrame:HookScript("OnHide", function()
+      if cleanOn then cleanOn = false; setPins(1) end
+    end)
+  end
+  cleanOn = true
+  -- gra odswieza znaczniki co chwile (zmiana krainy, questy) - chowamy je, dopoki mapa jest otwarta
+  local function tick()
+    if not cleanOn then return end
+    setPins(0)
+    C_Timer.After(0.2, tick)
+  end
+  tick()
+  ns.msg("Czysta mapa: znaczniki schowane. Wybierz kraine (albo caly kontynent) i zrob zrzut (Print Screen). Zamknij mape, zeby wrocily.")
+end
