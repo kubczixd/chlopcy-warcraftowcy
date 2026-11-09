@@ -3,13 +3,13 @@
 #  1. co 15 s sprawdza pliki World of Warcraft\_*_\WTF\Account\*\SavedVariables\Ekipa.lua
 #  2. gdy plik sie zmienil (gra zapisuje go przy /reload, wylogowaniu i wyjsciu), pyta strone,
 #     ktore zdarzenie ma jako ostatnie, i wysyla tylko nowsze,
-#  3. co 3 h (i na starcie) sprawdza nowa wersje addonu i uploadera; addon podmienia,
-#     gdy gra jest wylaczona.
+#  3. na starcie, co 30 min i zaraz po wylaczeniu gry sprawdza nowa wersje addonu i uploadera;
+#     addon podmienia, gdy gra jest wylaczona.
 # Konfiguracja: %LOCALAPPDATA%\EkipaWoW\config.json (token, adres strony, folder gry).
 # Dziennik: %LOCALAPPDATA%\EkipaWoW\uploader.log
 # Plik tylko ASCII (Windows PowerShell 5.1 czyta skrypty bez BOM jako ANSI).
 
-$UploaderVersion = '1.0.1'
+$UploaderVersion = '1.0.2'
 $ErrorActionPreference = 'Stop'
 $Dir = Join-Path $env:LOCALAPPDATA 'EkipaWoW'
 $ConfigPath = Join-Path $Dir 'config.json'
@@ -151,11 +151,16 @@ function Update-All {
 # --- petla glowna -------------------------------------------------------------
 Write-Log "Start uploadera $UploaderVersion (gra: $($cfg.wow))"
 $nextUpdate = Get-Date
+$gameWasOn = $false
 $failUntil = Get-Date
 while ($true) {
   try {
+    # gra wlasnie sie wylaczyla -> od razu sprawdz aktualizacje (addon mozna podmienic tylko przy wylaczonej grze)
+    $gameOn = [bool](Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'Wow*' })
+    if ($gameWasOn -and -not $gameOn) { $nextUpdate = Get-Date }
+    $gameWasOn = $gameOn
     if ((Get-Date) -ge $nextUpdate) {
-      $nextUpdate = (Get-Date).AddHours(3)
+      $nextUpdate = (Get-Date).AddMinutes(30)
       try { Update-All } catch { Write-Log "Aktualizacja nieudana: $($_.Exception.Message)" }
     }
     if ((Get-Date) -ge $failUntil) {
