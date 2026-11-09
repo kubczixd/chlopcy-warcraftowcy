@@ -10,7 +10,7 @@
 # Dziennik: %LOCALAPPDATA%\EkipaWoW\uploader.log
 # Plik tylko ASCII (Windows PowerShell 5.1 czyta skrypty bez BOM jako ANSI).
 
-$UploaderVersion = '1.0.4'
+$UploaderVersion = '1.0.5'
 $ErrorActionPreference = 'Stop'
 $Dir = Join-Path $env:LOCALAPPDATA 'EkipaWoW'
 $ConfigPath = Join-Path $Dir 'config.json'
@@ -110,14 +110,51 @@ function Send-MapShot($ev, $file) {
   Write-Log ("Mapa {0}: wyslano zrzut ({1} odkrytych, {2})" -f $d.mapa, $d.odkryte, $(if ($res.saved) { 'nowe tlo' } else { 'strona ma lepszy' }))
 }
 
-# ZRZUT z addonu -> plik zrzutu z tego samego czasu (zegar komputera); kolejne zrzuty sa co > 1 s
+# Kod mapy narysowany przez addon w marginesie zrzutu (24 kwadraty: 20 bitow uiMapID + 4 bity sumy kontrolnej).
+# -1 = brak kodu albo zly kod.
+function Read-MapCode([string]$path, $kod, $ekran) {
+  $img = $null
+  try {
+    $img = New-Object Drawing.Bitmap $path
+    $k = $img.Height / [double]$ekran[1]
+    $v = 0; $ones = 0; $chk = 0
+    for ($i = 0; $i -lt 24; $i++) {
+      $x = [int](([double]$kod.x + [double]$kod.s / 2) * $k)
+      $y = [int](([double]$kod.y + [double]$kod.s * $i + [double]$kod.s / 2) * $k)
+      if ($x -ge $img.Width -or $y -ge $img.Height) { return -1 }
+      $c = $img.GetPixel($x, $y)
+      $bit = [int](($c.R + $c.G + $c.B) -gt 384)
+      if ($i -lt 20) { $v = $v -bor ($bit -shl $i); $ones += $bit } else { $chk = $chk -bor ($bit -shl ($i - 20)) }
+    }
+    if (($ones % 16) -ne $chk -or $v -eq 0) { return -1 }
+    return $v
+  } catch { return -1 } finally { if ($img) { $img.Dispose() } }
+}
+
+# ZRZUT z addonu -> plik zrzutu: po kodzie mapy w obrazie (addon >= 1.4.1), inaczej po czasie (zegar komputera)
 function Send-MapShots($shots, $last) {
   if (-not $shots.Count) { return }
   $files = Get-ShotFiles
   $used = @{}
+  $codes = @{}
   foreach ($ev in $shots) {
     try {
       $when = [DateTimeOffset]::FromUnixTimeSeconds([long]$ev.d.lokalnie).LocalDateTime
+      if ($ev.d.kod) {
+        $best = $null
+        foreach ($f in ($files | Where-Object { -not $used[$_.FullName] -and [Math]::Abs(($_.LastWriteTime - $when).TotalSeconds) -le 30 } |
+            Sort-Object { [Math]::Abs(($_.LastWriteTime - $when).TotalSeconds) })) {
+          if (-not $codes.ContainsKey($f.FullName)) { $codes[$f.FullName] = Read-MapCode $f.FullName $ev.d.kod $ev.d.ekran }
+          if ($codes[$f.FullName] -eq [int]$ev.d.mapa) { $best = $f; break }
+        }
+        if (-not $best) {
+          if ([long]$ev.n -gt $last) { Write-Log "Mapa $($ev.d.mapa): nie znalazlem zrzutu z jej kodem" }
+          continue
+        }
+        $used[$best.FullName] = $true
+        Send-MapShot $ev $best
+        continue
+      }
       $best = $files | Where-Object { -not $used[$_.FullName] } |
         Sort-Object { [Math]::Abs(($_.LastWriteTime - $when).TotalSeconds) } | Select-Object -First 1
       if (-not $best -or [Math]::Abs(($best.LastWriteTime - $when).TotalSeconds) -gt 3) {

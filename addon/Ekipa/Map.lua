@@ -185,8 +185,9 @@ local function showArt(mapID, quiet)
   local tw, th = L.tileWidth, L.tileHeight
   local cols = math.ceil(W / tw)
   -- skala: cala mapa na ekranie (z marginesem na podpis)
+  -- 94% ekranu: zostaje czarny margines z kazdej strony (na kod mapy przy automatycznych zrzutach)
   local sw, sh = UIParent:GetWidth(), UIParent:GetHeight() - 24
-  local k = math.min(sw / W, sh / H)
+  local k = math.min(sw / W, sh / H) * 0.94
   f.canvas:ClearAllPoints()
   f.canvas:SetSize(W * k, H * k)
   f.canvas:SetPoint("CENTER", 0, 10)
@@ -236,6 +237,7 @@ local function showArt(mapID, quiet)
   local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
   f.info:SetText(quiet and "" or string.format("%s (mapa %d) - zrob zrzut (Print Screen), Esc zamyka", info and ns.Safe(info.name) or "?", mapID))
   if not quiet and WorldMapFrame and WorldMapFrame:IsShown() and HideUIPanel then pcall(HideUIPanel, WorldMapFrame) end
+  ns.DrawMapCode(quiet and mapID or nil)
   f:Show()
 end
 
@@ -310,6 +312,36 @@ local function want(m, force)
 end
 
 -- prostokat mapy na zrzucie w pikselach (od lewego gornego rogu) i rozmiar ekranu
+-- Kod mapy na zrzucie: kolumna 24 kwadratow (biale = 1) w lewym gornym rogu, w czarnym marginesie.
+-- Bity 0-19: uiMapID, 20-23: suma kontrolna (liczba jedynek mod 16). Uploader czyta go z obrazu,
+-- wiec zrzut trafia do wlasciwej mapy niezaleznie od czasu zapisu pliku.
+local CODE = { x = 4, y = 4, s = 12, n = 24 } -- piksele ekranu
+function ns.DrawMapCode(mapID)
+  local f = shot
+  f.code = f.code or {}
+  for _, t in ipairs(f.code) do t:Hide() end
+  if not mapID then return end
+  local _, sh = GetPhysicalScreenSize()
+  local px = 768 / (sh * f:GetEffectiveScale()) -- jednostki UI na piksel ekranu
+  local bits, ones = {}, 0
+  for i = 0, 19 do
+    local b = math.floor(mapID / 2 ^ i) % 2
+    bits[i + 1] = b
+    ones = ones + b
+  end
+  local chk = ones % 16
+  for i = 0, 3 do bits[21 + i] = math.floor(chk / 2 ^ i) % 2 end
+  for i = 1, CODE.n do
+    local t = f.code[i] or f:CreateTexture(nil, "OVERLAY")
+    f.code[i] = t
+    t:ClearAllPoints()
+    t:SetSize(CODE.s * px, CODE.s * px)
+    t:SetPoint("TOPLEFT", f, "TOPLEFT", CODE.x * px, -(CODE.y + CODE.s * (i - 1)) * px)
+    if bits[i] == 1 then t:SetColorTexture(1, 1, 1, 1) else t:SetColorTexture(0, 0, 0, 1) end
+    t:Show()
+  end
+end
+
 local function canvasRect()
   local sw, sh = GetPhysicalScreenSize()
   local c = shot.canvas
@@ -327,7 +359,7 @@ local function finish(ok)
     if ok then
       ns.CH.zrzuty[p.m] = { n = p.n, t = ns.now() }
       -- lokalnie = zegar komputera (uploader po nim znajduje plik zrzutu)
-      ns.Log("ZRZUT", { mapa = p.m, odkryte = p.n, r = p.r, ekran = p.ekran, lokalnie = time() })
+      ns.Log("ZRZUT", { mapa = p.m, odkryte = p.n, r = p.r, ekran = p.ekran, lokalnie = time(), kod = CODE })
     end
   end
   busy = false
@@ -369,6 +401,8 @@ if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(20, function() pcall(che
 ns.Hook("start", function()
   C_Timer.After(30, function()
     if shotsOff() then return end
+    -- 1.4.1: zrzuty z kodem mapy - raz wszystko od nowa (1.4.0 mogl pomylic kolejnosc zrzutow)
+    if ns.CH.zrzuty_v ~= 2 then ns.CH.zrzuty = {}; ns.CH.zrzuty_v = 2 end
     local ok, conts = pcall(layout)
     for _, c in ipairs(ok and conts or {}) do
       for _, z in ipairs(c.strefy) do want(z.id) end
