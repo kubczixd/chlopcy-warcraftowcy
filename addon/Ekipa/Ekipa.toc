@@ -1,7 +1,7 @@
 ## Interface: 16001, 11509, 20506, 120105
 ## Title: Ekipa Challenge
 ## Notes: Zbiera statystyki postaci (poziomy, smierci, moby, zloto...) dla challenge.kubczi.pl
-## Version: 1.4.2
+## Version: 1.4.3
 ## Author: Ekipa
 ## SavedVariables: EkipaDB, EkipaLog
 

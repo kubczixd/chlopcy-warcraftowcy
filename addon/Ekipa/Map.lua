@@ -284,6 +284,7 @@ end
 -- uploader wycina ja i wysyla na strone (tlo mapy), a zrzut usuwa. Nigdy w walce. /ekipa mapa auto - wylacz.
 -------------------------------------------------------------------------------
 local queue, busy, pending = {}, false, nil
+local lastShotGT = -100 -- GetTime() ostatniego zrzutu
 
 local function exploredCount(m)
   local ok, list = pcall(function() return C_MapExplorationInfo.GetExploredMapTextures(m) end)
@@ -361,8 +362,7 @@ local function finish(ok)
     end
   end
   busy = false
-  -- zrzuty maja kod mapy, wiec moga isc szybko jeden po drugim
-  C_Timer.After(0.4, function() pcall(ns.ShotNext) end)
+  C_Timer.After(0.2, function() pcall(ns.ShotNext) end)
 end
 
 function ns.ShotNext()
@@ -371,6 +371,10 @@ function ns.ShotNext()
     C_Timer.After(5, function() pcall(ns.ShotNext) end)
     return
   end
+  -- gra nazywa pliki zrzutow z dokladnoscia do sekundy - dwa w tej samej sekundzie = drugi nadpisuje pierwszy;
+  -- czekamy przed pokazaniem mapy (mignie dalej tylko na chwile)
+  local wait = 1.1 - (GetTime() - lastShotGT)
+  if wait > 0 then C_Timer.After(wait, function() pcall(ns.ShotNext) end) return end
   local m = table.remove(queue, 1)
   busy = true
   local ok = pcall(showArt, m, true)
@@ -380,7 +384,7 @@ function ns.ShotNext()
   pcall(SetCVar, "screenshotFormat", "jpg")
   pcall(SetCVar, "screenshotQuality", "10")
   -- chwila na wczytanie tekstur, potem zrzut; bez odpowiedzi gry po 3 s - zamykamy
-  C_Timer.After(0.15, function() if pending and pending.m == m then Screenshot() end end)
+  C_Timer.After(0.15, function() if pending and pending.m == m then lastShotGT = GetTime(); Screenshot() end end)
   C_Timer.After(3, function() if pending and pending.m == m then finish(false) end end)
 end
 ns.On("SCREENSHOT_SUCCEEDED", function() if pending then finish(true) end end)
@@ -399,8 +403,8 @@ if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(20, function() pcall(che
 ns.Hook("start", function()
   C_Timer.After(30, function()
     if shotsOff() then return end
-    -- 1.4.1: zrzuty z kodem mapy - raz wszystko od nowa (1.4.0 mogl pomylic kolejnosc zrzutow)
-    if ns.CH.zrzuty_v ~= 2 then ns.CH.zrzuty = {}; ns.CH.zrzuty_v = 2 end
+    -- 1.4.3: jeszcze raz wszystko (w 1.4.2 zrzuty z tej samej sekundy nadpisywaly sie nawzajem)
+    if ns.CH.zrzuty_v ~= 3 then ns.CH.zrzuty = {}; ns.CH.zrzuty_v = 3 end
     local ok, conts = pcall(layout)
     for _, c in ipairs(ok and conts or {}) do
       for _, z in ipairs(c.strefy) do want(z.id, true) end -- wszystkie krainy, takze nieodwiedzone
